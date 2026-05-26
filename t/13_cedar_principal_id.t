@@ -243,3 +243,31 @@ GET /test.html
 X-Principal: bob
 X-Role: admin
 --- error_code: 403
+
+
+=== TEST 13: auth_cedar_principal_id empty does NOT fall back to
+             $remote_user even when Basic Auth populated it
+             (locks the "explicit directive is strict override" rule
+             from issue #004 — alice is authenticated and would match
+             the policy via the back-compat path, but the explicitly
+             configured empty principal_id must take precedence and
+             deny)
+--- http_config
+    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+--- config
+    location /test.html {
+        auth_basic              "test";
+        auth_basic_user_file    $TEST_NGINX_CONF_DIR/htpasswd;
+        auth_cedar              on;
+        auth_cedar_principal_id $http_x_principal;
+    }
+--- user_files
+>>> test.html
+OK
+--- request
+GET /test.html
+--- more_headers
+Authorization: Basic YWxpY2U6c2VjcmV0
+--- error_code: 403
+--- error_log
+principal=""
