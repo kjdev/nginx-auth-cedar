@@ -1,0 +1,351 @@
+# Configuration reference
+
+This document is the directive and variable reference for
+`ngx_http_auth_cedar_module`. See [POLICY_LANGUAGE.md](POLICY_LANGUAGE.md)
+for the Cedar policy language subset and [EXAMPLES.md](EXAMPLES.md) for
+end-to-end scenarios.
+
+## Loading the module
+
+The module is dynamic; load it from the main `nginx.conf` before any
+`http { }` block:
+
+```nginx
+load_module modules/ngx_http_auth_cedar_module.so;
+```
+
+For container images built via the bundled `Dockerfile`, the `load_module`
+line is injected into `/etc/nginx/nginx.conf` automatically.
+
+## Directives
+
+| Directive | Description |
+| --- | --- |
+| [auth_cedar](#auth_cedar) | Enable or disable Cedar enforcement for the location |
+| [auth_cedar_policy_file](#auth_cedar_policy_file) | Load a Cedar policy file at configuration time |
+| [auth_cedar_principal_attr](#auth_cedar_principal_attr) | Map an nginx variable to a Cedar `principal` attribute |
+| [auth_cedar_resource_type](#auth_cedar_resource_type) | Set the entity type used for the `resource` |
+| [auth_cedar_resource_attr](#auth_cedar_resource_attr) | Map an nginx variable to a Cedar `resource` attribute |
+| [auth_cedar_context_attr](#auth_cedar_context_attr) | Map an nginx variable to a Cedar `context` attribute |
+| [auth_cedar_deny_status](#auth_cedar_deny_status) | HTTP status returned on deny |
+
+### auth_cedar
+
+```
+Syntax:  auth_cedar on | off;
+Default: auth_cedar off;
+Context: server, location, if in location
+```
+
+Enables or disables Cedar enforcement for the location. When `on`, the
+handler runs at the PRECONTENT phase; when `off`, the handler returns
+immediately and no policy is evaluated.
+
+Enabling `auth_cedar on` without an `auth_cedar_policy_file` configured
+returns `500 Internal Server Error` and logs
+`cedar: no policy file configured`.
+
+### auth_cedar_policy_file
+
+```
+Syntax:  auth_cedar_policy_file path;
+Default: -
+Context: http
+```
+
+Loads a Cedar policy file at configuration time. The file is read into
+the configuration pool, parsed via `nxe_cedar_parse()`, and merged into
+a single policy set shared by every `server` / `location` that enables
+`auth_cedar`.
+
+The directive may be repeated. Each invocation appends its policies to
+the shared policy set; policy IDs (the `@id` annotation) are **not**
+deduplicated, so two files declaring the same `@id` will both contribute
+to the evaluation. The order across files matches the order of
+directives.
+
+Relative paths are resolved against the nginx prefix (the same rules as
+`access_log` or `include`).
+
+```nginx
+http {
+    auth_cedar_policy_file /etc/nginx/policies/base.cedar;
+    auth_cedar_policy_file /etc/nginx/policies/tenants.cedar;
+}
+```
+
+A parse error (invalid syntax, unsupported construct, unreadable file)
+aborts `nginx -t` / startup with an `emerg`-level log message.
+
+### auth_cedar_principal_attr
+
+```
+Syntax:  auth_cedar_principal_attr name value;
+Default: -
+Context: server, location
+```
+
+Maps an nginx variable (or any
+[complex value](https://nginx.org/en/docs/dev/development_guide.html#http_complex_values)
+— literal strings, variable expansions, etc.) to a Cedar `principal`
+attribute. The mapping is resolved per request via
+`ngx_http_complex_value()`, so anything published by an earlier phase
+(`auth_jwt`, `auth_oauth2_token`, `map`, Lua, …) is available.
+
+```nginx
+auth_cedar_principal_attr role     $jwt_claim_role;
+auth_cedar_principal_attr tenant   $jwt_claim_tenant_id;
+auth_cedar_principal_attr verified $jwt_claim_email_verified;
+```
+
+The Cedar policy can then read `principal.role`, `principal.tenant`,
+`principal.verified`.
+
+Repeating the directive with the same attribute name within a single
+scope is rejected at configuration time (mirrors the duplicate-key
+rejection in `nxe-cedar`'s attribute injection API). When the variable
+resolves to an empty string, the attribute is **not** injected (so
+`principal has role` reflects whether the claim was actually present
+rather than always being `true`).
+
+The principal entity itself is always `User::"$remote_user"`. To carry an
+identifier other than `$remote_user`, either use Basic Auth / the JWT
+module's `auth_jwt_claim_set` to populate `$remote_user`, or expose the
+identifier as an attribute (e.g. `principal.sub`) and reference it from
+policies.
+
+### auth_cedar_resource_type
+
+```
+Syntax:  auth_cedar_resource_type type;
+Default: auth_cedar_resource_type Resource;
+Context: server, location
+```
+
+Sets the entity type used to build the `resource` for this location. The
+resource is constructed as `<type>::"<URI>"`, so a policy can target the
+right location with `resource is Endpoint` / `resource is Article` even
+when a single policy file is shared.
+
+```nginx
+location /api/articles/ {
+    auth_cedar_resource_type Article;
+    auth_cedar on;
+}
+
+location /admin/ {
+    auth_cedar_resource_type AdminPanel;
+    auth_cedar on;
+}
+```
+
+```cedar
+permit (
+    principal in Role::"editor",
+    action,
+    resource is Article
+);
+
+forbid (
+    principal,
+    action,
+    resource is AdminPanel
+) unless {
+    principal.role == "admin"
+};
+```
+
+### auth_cedar_resource_attr
+
+```
+Syntax:  auth_cedar_resource_attr name value;
+Default: -
+Context: server, location
+```
+
+Maps an nginx variable to a Cedar `resource` attribute. Identical
+semantics to `auth_cedar_principal_attr` but populates `resource.<name>`.
+
+```nginx
+auth_cedar_resource_attr tenant $arg_tenant;
+auth_cedar_resource_attr method $request_method;
+```
+
+### auth_cedar_context_attr
+
+```
+Syntax:  auth_cedar_context_attr name value;
+Default: -
+Context: server, location
+```
+
+Maps an nginx variable to a Cedar `context` attribute. Identical
+semantics to `auth_cedar_principal_attr` but populates `context.<name>`.
+
+```nginx
+auth_cedar_context_attr ua    $http_user_agent;
+auth_cedar_context_attr hour  $time_iso8601;
+auth_cedar_context_attr ip    $http_x_forwarded_for;   # overrides default
+```
+
+`context.ip` is auto-injected from `$remote_addr` by default. Mapping a
+custom value to `ip` via `auth_cedar_context_attr` **replaces** the
+auto-injection (the duplicate-key rejection in the underlying injection
+API would otherwise abort the request). Use this to trust a header
+populated by the [`realip`](https://nginx.org/en/docs/http/ngx_http_realip_module.html)
+module.
+
+### auth_cedar_deny_status
+
+```
+Syntax:  auth_cedar_deny_status code;
+Default: auth_cedar_deny_status 403;
+Context: server, location
+```
+
+HTTP status returned when the policy set denies the request. Useful when
+downstream tooling needs to distinguish authorization failures (e.g. `401`
+to trigger a re-auth redirect, `404` to hide resource existence).
+
+```nginx
+location /admin/ {
+    auth_cedar             on;
+    auth_cedar_deny_status 404;     # hide existence of admin endpoints
+}
+```
+
+## Variables
+
+| Variable | Description |
+| --- | --- |
+| [$cedar_result](#cedar_result) | `allow` or `deny` (human-readable) |
+| [$cedar_decision](#cedar_decision) | `1` or `0` (machine-readable) |
+| [$cedar_policy_id](#cedar_policy_id) | `@id` annotation of the first matched policy |
+| [$cedar_advice](#cedar_advice) | `@advice` annotation of the first matched policy |
+
+All variables are marked `NGX_HTTP_VAR_NOCACHEABLE`, so log subrequests
+and downstream `map` lookups always observe the live decision. They are
+**unset** on locations where `auth_cedar` did not run (e.g. inside a
+sibling `location` where `auth_cedar off;` is in effect).
+
+### $cedar_result
+
+`allow` or `deny`. Human-readable; the natural choice for `log_format`.
+
+```nginx
+log_format auth '$remote_addr - $remote_user [$time_local] '
+                '"$request" $status $body_bytes_sent '
+                'cedar=$cedar_result policy="$cedar_policy_id" '
+                'advice="$cedar_advice"';
+access_log /var/log/nginx/access.log auth;
+```
+
+### $cedar_decision
+
+`1` (allow) or `0` (deny). Machine-readable; useful for `map` / Lua
+dispatch where a boolean is more convenient than a string.
+
+### $cedar_policy_id
+
+The `@id` annotation of the first matched policy. Unset when no policy
+matched (default-deny path) or when the matched policy carries no `@id`
+annotation. Useful for tying a denied request back to the exact policy
+that fired.
+
+```cedar
+@id("policy-001-admin-only")
+forbid (
+    principal,
+    action,
+    resource is AdminPanel
+) unless {
+    principal.role == "admin"
+};
+```
+
+### $cedar_advice
+
+The `@advice` annotation of the first matched policy. Same semantics as
+`$cedar_policy_id` but with the `@advice` key, intended to carry a
+human-readable reason that ends up in logs without the operator needing
+to maintain a separate `policy-id → reason` mapping.
+
+```cedar
+@id("rate-limit-exempt")
+@advice("rate limit is bypassed for service accounts")
+permit (
+    principal in Role::"service",
+    action,
+    resource
+);
+```
+
+## How a request is mapped to Cedar entities
+
+| Cedar field | nginx source | Customization |
+| --- | --- | --- |
+| `principal` (entity) | `User::"$remote_user"` | Type fixed to `User`; identifier follows `$remote_user`. Populate `$remote_user` via Basic Auth or `auth_jwt_claim_set` if needed. |
+| `principal.<attr>` | — | `auth_cedar_principal_attr <attr> <var>;` |
+| `action` (entity) | `Action::"$request_method"` (e.g. `Action::"GET"`) | Not configurable; the request method is canonical. |
+| `resource` (entity) | `<resource_type>::"$uri"` | `auth_cedar_resource_type <type>;` controls the type. |
+| `resource.<attr>` | — | `auth_cedar_resource_attr <attr> <var>;` |
+| `context.ip` | `$remote_addr` (auto-injected) | `auth_cedar_context_attr ip <var>;` overrides. |
+| `context.<attr>` | — | `auth_cedar_context_attr <attr> <var>;` |
+
+## Configuration inheritance
+
+The module follows nginx's standard server-to-location merge rules:
+
+| Setting | Merge rule | Default |
+| --- | --- | --- |
+| `auth_cedar` | child overrides parent | `off` |
+| `auth_cedar_resource_type` | child overrides parent (string merge) | `Resource` |
+| `auth_cedar_principal_attr` / `auth_cedar_resource_attr` / `auth_cedar_context_attr` | child overrides parent **entirely** if the child defines any mappings; otherwise inherits the parent list | — |
+| `auth_cedar_deny_status` | child overrides parent | `403` |
+| `auth_cedar_policy_file` | global (`http` context only); shared by all locations | — |
+
+The "child overrides entirely" behavior for the attribute-mapping
+directives is important: declaring a single `auth_cedar_principal_attr`
+inside a `location` block discards every principal attribute mapping
+inherited from the surrounding `server` block. Repeat the parent
+mappings in the child if you need them both.
+
+## Operational notes
+
+### Policy reloads
+
+Policy files are read at configuration time. A change to a policy file
+takes effect on `nginx -s reload` (or a full restart). The reload is
+performed against the configuration pool, so an invalid policy after a
+reload leaves the worker running the previous policy set.
+
+### Logging policy denials
+
+A denial is logged at `info` level with the format:
+
+```
+cedar: access denied for "GET /admin/users", principal="alice", client=192.0.2.10
+```
+
+The `$cedar_policy_id` and `$cedar_advice` variables expose the matched
+policy to `access_log` formats, so an audit trail can be built without
+parsing the `error_log`.
+
+### Combining with auth_request
+
+`nginx-auth-cedar` runs in PRECONTENT, after `auth_request` (access
+phase). Anything `auth_request` publishes through `auth_request_set`
+becomes available as an nginx variable and can therefore be mapped via
+`auth_cedar_principal_attr` / `auth_cedar_context_attr`. This is the
+recommended path for Token Introspection (RFC 7662) and similar
+opaque-token flows where the claim set is computed by an upstream
+service.
+
+### Combining with auth_jwt
+
+The
+[`ngx_http_auth_jwt_module`](https://nginx.org/en/docs/http/ngx_http_auth_jwt_module.html)
+publishes JWT claims as `$jwt_claim_<name>` variables. These can be fed
+directly into `auth_cedar_principal_attr`. `nginx-auth-cedar` does **not**
+verify JWT signatures — combine it with `auth_jwt` (or an equivalent) in
+the access phase to enforce signature, expiry, and audience.
