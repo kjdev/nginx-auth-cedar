@@ -111,6 +111,17 @@ Basic Auth, set this directive explicitly (e.g.
 identifier (otherwise the principal id will be the empty string and
 `principal == User::"..."` policies will never match).
 
+When the directive is set but the complex value resolves to an empty
+string (for example, `$jwt_claim_sub` is empty because the request has
+no JWT), the explicit value still takes effect: the principal id stays
+empty and is **not** silently replaced with `$remote_user`. Policies
+matching `principal == User::"..."` will not fire, but an unconditional
+`permit (principal, ...);` rule will still allow the request because
+Cedar treats `User::""` as a valid principal. If a multi-source
+fallback is required, encode it in the complex value itself (e.g.
+`map_hash` / `set` directives to choose the first non-empty source).
+Empty resolutions are logged at `debug_http` to aid diagnosis.
+
 The principal entity type is always `User`.
 
 ### auth_cedar_principal_attr
