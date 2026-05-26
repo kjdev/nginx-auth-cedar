@@ -85,14 +85,24 @@ ngx_auth_cedar_resolve_attrs(ngx_http_request_t *r,
 ngx_int_t
 ngx_auth_cedar_entity_resolve(ngx_http_request_t *r,
     ngx_http_auth_cedar_loc_conf_t *lcf,
-    nxe_cedar_eval_ctx_t *ctx)
+    nxe_cedar_eval_ctx_t *ctx,
+    ngx_str_t *principal_id_out)
 {
     ngx_str_t principal_id;
 
     /* principal */
 
-    if (r->headers_in.user.len > 0) {
+    if (lcf->principal_id != NULL) {
+        if (ngx_http_complex_value(r, lcf->principal_id,
+                                   &principal_id)
+            != NGX_OK)
+        {
+            return NGX_ERROR;
+        }
+
+    } else if (r->headers_in.user.len > 0) {
         principal_id = r->headers_in.user;
+
     } else {
         ngx_str_set(&principal_id, "");
     }
@@ -100,6 +110,10 @@ ngx_auth_cedar_entity_resolve(ngx_http_request_t *r,
     nxe_cedar_eval_ctx_set_principal(ctx,
                                      &ngx_auth_cedar_user_type,
                                      &principal_id);
+
+    if (principal_id_out != NULL) {
+        *principal_id_out = principal_id;
+    }
 
     if (ngx_auth_cedar_resolve_attrs(r, lcf->principal_attrs,
                                      ctx,

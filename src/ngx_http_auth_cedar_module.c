@@ -22,6 +22,8 @@ static char *ngx_http_auth_cedar_merge_loc_conf(ngx_conf_t *cf,
 
 static char *ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
+static char *ngx_http_auth_cedar_principal_id(ngx_conf_t *cf,
+    ngx_command_t *cmd, void *conf);
 static char *ngx_http_auth_cedar_attr(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
 static char *ngx_http_auth_cedar_deny_status(ngx_conf_t *cf,
@@ -41,6 +43,13 @@ static ngx_command_t ngx_http_auth_cedar_commands[] = {
       NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
       ngx_http_auth_cedar_policy_file,
       NGX_HTTP_MAIN_CONF_OFFSET,
+      0,
+      NULL },
+
+    { ngx_string("auth_cedar_principal_id"),
+      NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+      ngx_http_auth_cedar_principal_id,
+      NGX_HTTP_LOC_CONF_OFFSET,
       0,
       NULL },
 
@@ -140,7 +149,12 @@ ngx_http_auth_cedar_handler(ngx_http_request_t *r)
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_auth_cedar_module);
 
-    if (ctx != NULL && ctx->evaluated) {
+    /* Reuse the cached decision only when we are re-entering for the
+       same location. After an internal redirect to a different location
+       (e.g. via `error_page 403 = /other`) the lcf differs and the
+       policy set must be evaluated against the new location's
+       attribute mappings. */
+    if (ctx != NULL && ctx->evaluated && ctx->last_lcf == lcf) {
         if (ctx->decision == NXE_CEDAR_DECISION_ALLOW) {
             return NGX_OK;
         }
@@ -148,19 +162,24 @@ ngx_http_auth_cedar_handler(ngx_http_request_t *r)
         return lcf->deny_status;
     }
 
-    ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_auth_cedar_ctx_t));
     if (ctx == NULL) {
-        return NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
+        ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_auth_cedar_ctx_t));
+        if (ctx == NULL) {
+            return NGX_HTTP_INTERNAL_SERVER_ERROR;
+        }
 
-    ngx_http_set_ctx(r, ctx, ngx_http_auth_cedar_module);
+        ngx_http_set_ctx(r, ctx, ngx_http_auth_cedar_module);
+    }
 
     eval_ctx = nxe_cedar_eval_ctx_create(r->pool);
     if (eval_ctx == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    if (ngx_auth_cedar_entity_resolve(r, lcf, eval_ctx) != NGX_OK) {
+    if (ngx_auth_cedar_entity_resolve(r, lcf, eval_ctx,
+                                      &ctx->principal_id)
+        != NGX_OK)
+    {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -170,6 +189,7 @@ ngx_http_auth_cedar_handler(ngx_http_request_t *r)
 
     ctx->decision = decision;
     ctx->evaluated = 1;
+    ctx->last_lcf = lcf;
 
     if (decision == NXE_CEDAR_DECISION_ALLOW) {
         return NGX_OK;
@@ -179,7 +199,7 @@ ngx_http_auth_cedar_handler(ngx_http_request_t *r)
                   "cedar: access denied for \"%V %V\","
                   " principal=\"%V\", client=%V",
                   &r->method_name, &r->uri,
-                  &r->headers_in.user,
+                  &ctx->principal_id,
                   &r->connection->addr_text);
 
     return lcf->deny_status;
@@ -242,6 +262,7 @@ ngx_http_auth_cedar_create_loc_conf(ngx_conf_t *cf)
     conf->enable = NGX_CONF_UNSET;
     conf->deny_status = NGX_CONF_UNSET_UINT;
 
+    conf->principal_id = NGX_CONF_UNSET_PTR;
     conf->principal_attrs = NGX_CONF_UNSET_PTR;
     conf->resource_attrs = NGX_CONF_UNSET_PTR;
     conf->context_attrs = NGX_CONF_UNSET_PTR;
@@ -262,6 +283,8 @@ ngx_http_auth_cedar_merge_loc_conf(ngx_conf_t *cf,
     ngx_conf_merge_str_value(conf->resource_type,
                              prev->resource_type, "Resource");
 
+    ngx_conf_merge_ptr_value(conf->principal_id,
+                             prev->principal_id, NULL);
     ngx_conf_merge_ptr_value(conf->principal_attrs,
                              prev->principal_attrs, NULL);
     ngx_conf_merge_ptr_value(conf->resource_attrs,
@@ -328,6 +351,16 @@ ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
 
     size = (size_t) ngx_file_size(&fi);
 
+    if (size > NGX_HTTP_AUTH_CEDAR_MAX_POLICY_FILE_SIZE) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "cedar policy file \"%V\" is %uz bytes,"
+                           " exceeds the %uz byte limit",
+                           &file_path, size,
+                           (size_t)
+                           NGX_HTTP_AUTH_CEDAR_MAX_POLICY_FILE_SIZE);
+        goto failed;
+    }
+
     ngx_memzero(&file, sizeof(ngx_file_t));
 
     file.fd = fd;
@@ -385,17 +418,23 @@ ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
         return NGX_CONF_OK;
     }
 
-    {
-        src = pset->policies->elts;
+    /* A previously loaded policy set may have parsed to an empty
+       (NULL) policies array if the first file was blank; promote the
+       incoming array in that case rather than dereferencing a NULL. */
+    if (mcf->policy_set->policies == NULL) {
+        mcf->policy_set->policies = pset->policies;
+        return NGX_CONF_OK;
+    }
 
-        for (i = 0; i < pset->policies->nelts; i++) {
-            dst = ngx_array_push(mcf->policy_set->policies);
-            if (dst == NULL) {
-                return NGX_CONF_ERROR;
-            }
+    src = pset->policies->elts;
 
-            *dst = src[i];
+    for (i = 0; i < pset->policies->nelts; i++) {
+        dst = ngx_array_push(mcf->policy_set->policies);
+        if (dst == NULL) {
+            return NGX_CONF_ERROR;
         }
+
+        *dst = src[i];
     }
 
     return NGX_CONF_OK;
@@ -453,6 +492,41 @@ ngx_http_auth_cedar_attr(ngx_conf_t *cf, ngx_command_t *cmd,
     ccv.cf = cf;
     ccv.value = &value[2];
     ccv.complex_value = attr->value;
+
+    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
+ngx_http_auth_cedar_principal_id(ngx_conf_t *cf,
+    ngx_command_t *cmd, void *conf)
+{
+    ngx_http_auth_cedar_loc_conf_t *lcf = conf;
+
+    ngx_str_t *value;
+    ngx_http_compile_complex_value_t ccv;
+
+    if (lcf->principal_id != NGX_CONF_UNSET_PTR) {
+        return "is duplicate";
+    }
+
+    value = cf->args->elts;
+
+    lcf->principal_id = ngx_palloc(cf->pool,
+                                   sizeof(ngx_http_complex_value_t));
+    if (lcf->principal_id == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+    ccv.cf = cf;
+    ccv.value = &value[1];
+    ccv.complex_value = lcf->principal_id;
 
     if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
         return NGX_CONF_ERROR;
