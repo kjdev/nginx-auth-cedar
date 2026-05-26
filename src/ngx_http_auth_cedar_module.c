@@ -459,8 +459,9 @@ ngx_http_auth_cedar_attr(ngx_conf_t *cf, ngx_command_t *cmd,
 
     ngx_array_t **app;
     ngx_str_t *value;
-    ngx_auth_cedar_attr_mapping_t *attr;
+    ngx_auth_cedar_attr_mapping_t *attr, *existing;
     ngx_http_compile_complex_value_t ccv;
+    ngx_uint_t i;
 
     app = (ngx_array_t **) (p + cmd->offset);
 
@@ -472,12 +473,29 @@ ngx_http_auth_cedar_attr(ngx_conf_t *cf, ngx_command_t *cmd,
         }
     }
 
+    value = cf->args->elts;
+
+    /* Reject duplicate names at configuration time: the nxe-cedar
+       evaluator rejects a second add for the same attribute and would
+       otherwise turn this misconfiguration into a per-request 500. */
+    existing = (*app)->elts;
+    for (i = 0; i < (*app)->nelts; i++) {
+        if (existing[i].name.len == value[1].len
+            && ngx_strncmp(existing[i].name.data, value[1].data,
+                           value[1].len)
+               == 0)
+        {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "duplicate \"%V\" name \"%V\"",
+                               &cmd->name, &value[1]);
+            return NGX_CONF_ERROR;
+        }
+    }
+
     attr = ngx_array_push(*app);
     if (attr == NULL) {
         return NGX_CONF_ERROR;
     }
-
-    value = cf->args->elts;
 
     attr->name = value[1];
 
