@@ -1,5 +1,24 @@
 # Changelog
 
+## [4316c20](../../commit/4316c20) - 2026-05-27
+
+### Added
+
+- `auth_cedar_principal_id <value>` directive (server / location) — a complex-value override for the identifier of the `principal` entity, so the principal can be sourced from any nginx variable (`$jwt_claim_sub`, `$oauth2_username`, `$arg_*`, a `map`-rewritten value, …) rather than the `r->headers_in.user` field that only `ngx_http_auth_basic_module` populates (built-in `$remote_user` is not `NGX_HTTP_VAR_CHANGEABLE`, so `auth_request_set $remote_user ...` is rejected at configuration time and cannot feed the fallback)
+  - Without the directive, the principal id continues to fall back to `r->headers_in.user` (the previous behavior); a JWT / OAuth2 deployment that never runs Basic Auth no longer silently evaluates every `principal == User::"alice"` policy against an empty id
+  - The directive participates in the standard server-to-location merge (child overrides parent) and accepts any complex value, so `auth_cedar_principal_id "${jwt_claim_iss}|${jwt_claim_sub}"` compositions are valid
+
+### Fixed
+
+- Re-evaluate the policy set after an internal redirect lands in a different location (review finding S4)
+  - The per-request context now records the `loc_conf` pointer it evaluated against (`ctx->last_lcf`); the cached decision is only reused when the same location re-enters the handler. After an `error_page = /elsewhere`, `try_files`, or named-location redirect the destination's `loc_conf` differs, so the policy set runs again against the destination's `auth_cedar_principal_attr` / `auth_cedar_resource_type` / etc. mappings
+  - Closes the bypass where a permissive `/foo` decision could carry into a stricter `/bar` reached through `error_page`, while still preserving the fast path for genuine re-entry into the same location
+- Cap a single `auth_cedar_policy_file` payload at 16 MiB (review finding S2)
+  - A misconfigured (or malicious) policy file no longer expands the configuration pool without bound. The size is checked before `ngx_pnalloc()` so the rejection happens with the original file size in the `emerg` log message rather than as an opaque OOM
+- Guard the multi-file policy merge against a NULL `policies` array on the accumulated set (review finding B1)
+  - When an earlier `auth_cedar_policy_file` produced an empty policy set (e.g. a blank file or comments only), the next directive previously dereferenced a NULL `policies->elts` in the append loop; the merge now promotes the incoming array verbatim in that case, so any ordering of empty + non-empty files yields the same policy set
+- Drop the redundant block scope around the merge loop (review finding R1) and clear up the `$remote_user`-only documentation that obscured the principal-id source rule
+
 ## [fb0aea3](../../commit/fb0aea3) - 2026-05-27
 
 ### Added
