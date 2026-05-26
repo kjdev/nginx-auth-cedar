@@ -100,6 +100,18 @@ ngx_auth_cedar_entity_resolve(ngx_http_request_t *r,
             return NGX_ERROR;
         }
 
+        /* The user explicitly configured auth_cedar_principal_id but it
+           resolved to "" — flag this as a likely misconfiguration. The
+           fallback path (no directive, $remote_user absent) routinely
+           lands on empty for policies that don't reference principal,
+           so we only log the explicit case to avoid debug-log noise. */
+        if (principal_id.len == 0) {
+            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                           "cedar: auth_cedar_principal_id resolved to"
+                           " empty string; policies referencing"
+                           " principal will not match");
+        }
+
     } else if (r->headers_in.user.len > 0) {
         principal_id = r->headers_in.user;
 
