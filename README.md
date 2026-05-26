@@ -192,7 +192,7 @@ The Cedar evaluation context is built from the request as follows
 
 | Cedar field | nginx source |
 | --- | --- |
-| `principal` (entity) | `User::"$remote_user"` |
+| `principal` (entity) | `User::"<id>"` — id from `auth_cedar_principal_id` (default `$remote_user`) |
 | `principal.<attr>` | `auth_cedar_principal_attr <attr> <var>` |
 | `action` (entity) | `Action::"$request_method"` (e.g. `Action::"GET"`) |
 | `resource` (entity) | `<resource_type>::"$uri"` |
@@ -213,6 +213,7 @@ auth_cedar_policy_file <path>;            # load policy file (multiple allowed)
 
 # server { } / location { }
 auth_cedar               on | off;        # enable for this location
+auth_cedar_principal_id   <value>;        # principal entity id (default: $remote_user)
 auth_cedar_principal_attr <name> <var>;   # principal attribute mapping
 auth_cedar_resource_type  <type>;         # resource entity type
 auth_cedar_resource_attr  <name> <var>;   # resource attribute mapping

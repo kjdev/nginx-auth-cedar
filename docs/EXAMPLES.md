@@ -25,6 +25,10 @@ http {
         auth_jwt          "rbac" token=$http_authorization;
         auth_jwt_key_file /etc/nginx/keys/jwks.json;
 
+        # Use the JWT subject claim as the Cedar principal id, so
+        # `principal == User::"alice@example.com"` policies fire.
+        auth_cedar_principal_id   $jwt_claim_sub;
+
         auth_cedar_principal_attr role   $jwt_claim_role;
         auth_cedar_principal_attr tenant $jwt_claim_tenant;
 

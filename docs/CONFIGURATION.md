@@ -23,6 +23,7 @@ line is injected into `/etc/nginx/nginx.conf` automatically.
 | --- | --- |
 | [auth_cedar](#auth_cedar) | Enable or disable Cedar enforcement for the location |
 | [auth_cedar_policy_file](#auth_cedar_policy_file) | Load a Cedar policy file at configuration time |
+| [auth_cedar_principal_id](#auth_cedar_principal_id) | Override the identifier used for the `principal` entity |
 | [auth_cedar_principal_attr](#auth_cedar_principal_attr) | Map an nginx variable to a Cedar `principal` attribute |
 | [auth_cedar_resource_type](#auth_cedar_resource_type) | Set the entity type used for the `resource` |
 | [auth_cedar_resource_attr](#auth_cedar_resource_attr) | Map an nginx variable to a Cedar `resource` attribute |
@@ -75,7 +76,42 @@ http {
 ```
 
 A parse error (invalid syntax, unsupported construct, unreadable file)
-aborts `nginx -t` / startup with an `emerg`-level log message.
+aborts `nginx -t` / startup with an `emerg`-level log message. A single
+policy file is capped at **16 MiB**; larger files are rejected at
+configuration time to keep configuration-pool growth bounded.
+
+### auth_cedar_principal_id
+
+```
+Syntax:  auth_cedar_principal_id value;
+Default: -
+Context: server, location
+```
+
+Overrides the identifier of the `principal` entity. The value is a
+[complex value](https://nginx.org/en/docs/dev/development_guide.html#http_complex_values),
+so a literal string, an nginx variable, or a concatenation can all be
+used.
+
+```nginx
+# JWT subject claim
+auth_cedar_principal_id $jwt_claim_sub;
+
+# explicit identifier for a static service location
+auth_cedar_principal_id "service-account";
+```
+
+When not set, the principal id falls back to the user from
+`ngx_http_auth_basic_module` (`r->headers_in.user`, which `$remote_user`
+also reads). Built-in `$remote_user` is not `NGX_HTTP_VAR_CHANGEABLE`, so
+`auth_request_set $remote_user ...` is rejected at configuration time and
+does not act as a fallback source. For JWT / OAuth2 deployments without
+Basic Auth, set this directive explicitly (e.g.
+`auth_cedar_principal_id $jwt_claim_sub;`) to expose a meaningful
+identifier (otherwise the principal id will be the empty string and
+`principal == User::"..."` policies will never match).
+
+The principal entity type is always `User`.
 
 ### auth_cedar_principal_attr
 
@@ -108,11 +144,9 @@ resolves to an empty string, the attribute is **not** injected (so
 `principal has role` reflects whether the claim was actually present
 rather than always being `true`).
 
-The principal entity itself is always `User::"$remote_user"`. To carry an
-identifier other than `$remote_user`, either use Basic Auth / the JWT
-module's `auth_jwt_claim_set` to populate `$remote_user`, or expose the
-identifier as an attribute (e.g. `principal.sub`) and reference it from
-policies.
+The principal entity is always typed as `User`; its id comes from
+`auth_cedar_principal_id` when configured and falls back to `$remote_user`
+otherwise (see [auth_cedar_principal_id](#auth_cedar_principal_id)).
 
 ### auth_cedar_resource_type
 
@@ -247,8 +281,12 @@ dispatch where a boolean is more convenient than a string.
 
 ### $cedar_policy_id
 
-The `@id` annotation of the first matched policy. Unset when no policy
-matched (default-deny path) or when the matched policy carries no `@id`
+The `@id` annotation of the first matched policy in **policy-file
+declaration order** — i.e. the first `forbid` to fire on deny, or the
+first `permit` to fire on allow. When multiple policies match (for
+example two `forbid` policies covering the same request), only the
+first match's annotation is exposed. Unset when no policy matched
+(default-deny path) or when the matched policy carries no `@id`
 annotation. Useful for tying a denied request back to the exact policy
 that fired.
 
@@ -284,7 +322,7 @@ permit (
 
 | Cedar field | nginx source | Customization |
 | --- | --- | --- |
-| `principal` (entity) | `User::"$remote_user"` | Type fixed to `User`; identifier follows `$remote_user`. Populate `$remote_user` via Basic Auth or `auth_jwt_claim_set` if needed. |
+| `principal` (entity) | `User::"<id>"` — id comes from `auth_cedar_principal_id` if set, otherwise `$remote_user` | Type fixed to `User`. `auth_cedar_principal_id <var>;` to override the id (for JWT / OAuth2 setups that don't populate `$remote_user`). |
 | `principal.<attr>` | — | `auth_cedar_principal_attr <attr> <var>;` |
 | `action` (entity) | `Action::"$request_method"` (e.g. `Action::"GET"`) | Not configurable; the request method is canonical. |
 | `resource` (entity) | `<resource_type>::"$uri"` | `auth_cedar_resource_type <type>;` controls the type. |
@@ -300,6 +338,7 @@ The module follows nginx's standard server-to-location merge rules:
 | --- | --- | --- |
 | `auth_cedar` | child overrides parent | `off` |
 | `auth_cedar_resource_type` | child overrides parent (string merge) | `Resource` |
+| `auth_cedar_principal_id` | child overrides parent | — (falls back to `$remote_user`) |
 | `auth_cedar_principal_attr` / `auth_cedar_resource_attr` / `auth_cedar_context_attr` | child overrides parent **entirely** if the child defines any mappings; otherwise inherits the parent list | — |
 | `auth_cedar_deny_status` | child overrides parent | `403` |
 | `auth_cedar_policy_file` | global (`http` context only); shared by all locations | — |
@@ -311,6 +350,18 @@ inherited from the surrounding `server` block. Repeat the parent
 mappings in the child if you need them both.
 
 ## Operational notes
+
+### Internal redirects
+
+When nginx internally redirects a request (`error_page = ...`,
+`try_files`, named locations, etc.) the destination location's policy
+mappings are evaluated afresh. The per-request context caches the
+previous decision only for re-entry into the **same** location, so a
+request that was permitted at `/foo` and is then redirected to `/bar`
+runs the policy set again against `/bar`'s `auth_cedar_principal_attr`,
+`auth_cedar_resource_type`, etc. This prevents a permissive decision
+from leaking into a stricter location through `error_page`-driven
+internal redirects.
 
 ### Policy reloads
 
