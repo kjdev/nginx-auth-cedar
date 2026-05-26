@@ -1,1 +1,5 @@
 /build/
+
+# Test artifacts: files prefixed with `.` under the policy test fixtures
+# are generated at test time (e.g. oversized policy fixtures).
+/t/conf/policies/.*
