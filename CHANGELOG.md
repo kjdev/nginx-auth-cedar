@@ -1,5 +1,13 @@
 # Changelog
 
+## [58af33c](../../commit/58af33c) - 2026-05-27
+
+### Fixed
+
+- Reject duplicate attribute names for `auth_cedar_principal_attr` / `auth_cedar_resource_attr` / `auth_cedar_context_attr` at configuration time
+  - The `nxe-cedar` evaluator already rejects a second `add` for the same attribute name on a given entity, but the directive handler previously let the duplicate through to request time, where every request then turned into a `500 Internal Server Error` — a silent failure mode that is easy to miss in production
+  - The handler now linear-scans the existing entries before pushing a new one and aborts startup with `nginx: [emerg] duplicate "auth_cedar_principal_attr" name "..."` when the directive would introduce a same-scope duplicate; the same name across different scopes (`principal_attr role` + `resource_attr role`) is still allowed since they bind to different entities, and the existing server → location override semantics (child `*_attrs` array replaces parent verbatim) are unchanged
+
 ## [4316c20](../../commit/4316c20) - 2026-05-27
 
 ### Added
