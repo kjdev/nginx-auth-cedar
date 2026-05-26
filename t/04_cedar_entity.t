@@ -229,3 +229,63 @@ X-Real-IP: 10.0.0.1
 --- request
 GET /test.html
 --- error_code: 403
+
+
+=== TEST 13: duplicate principal_attr name rejected at config time
+--- http_config
+    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+--- config
+    location /test.html {
+        auth_cedar on;
+        auth_cedar_principal_attr role "admin";
+        auth_cedar_principal_attr role "user";
+    }
+--- must_die
+--- error_log
+duplicate "auth_cedar_principal_attr" name "role"
+
+
+=== TEST 14: duplicate resource_attr name rejected at config time
+--- http_config
+    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+--- config
+    location /test.html {
+        auth_cedar on;
+        auth_cedar_resource_attr tenant "acme";
+        auth_cedar_resource_attr tenant "other";
+    }
+--- must_die
+--- error_log
+duplicate "auth_cedar_resource_attr" name "tenant"
+
+
+=== TEST 15: duplicate context_attr name rejected at config time
+--- http_config
+    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
+--- config
+    location /test.html {
+        auth_cedar on;
+        auth_cedar_context_attr ip "127.0.0.1";
+        auth_cedar_context_attr ip "10.0.0.1";
+    }
+--- must_die
+--- error_log
+duplicate "auth_cedar_context_attr" name "ip"
+
+
+=== TEST 16: same name across different attr scopes is allowed
+--- http_config
+    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+--- config
+    location /test.html {
+        auth_cedar on;
+        auth_cedar_principal_attr tenant "acme";
+        auth_cedar_resource_attr tenant "acme";
+        auth_cedar_principal_attr role "admin";
+    }
+--- user_files
+>>> test.html
+OK
+--- request
+GET /test.html
+--- error_code: 200
