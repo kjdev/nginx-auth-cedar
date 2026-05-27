@@ -10,7 +10,7 @@ __DATA__
 
 === TEST 1: forbid priority - permit all but forbid DELETE (GET allowed)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/forbid_priority.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/forbid_priority.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -27,7 +27,7 @@ OK
 
 === TEST 2: forbid priority - DELETE denied even with permit all
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/forbid_priority.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/forbid_priority.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -42,7 +42,7 @@ DELETE /test.html
 
 === TEST 3: forbid priority - POST allowed (405 = passed precontent phase)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/forbid_priority.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/forbid_priority.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -57,7 +57,7 @@ POST /test.html
 
 === TEST 4: basic forbid - GET allowed
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_forbid.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_forbid.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -72,7 +72,7 @@ GET /test.html
 
 === TEST 5: basic forbid - DELETE denied
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_forbid.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_forbid.cedar;
 --- config
     location /test.html {
         auth_cedar on;

@@ -10,7 +10,7 @@ __DATA__
 
 === TEST 1: like - prefix wildcard "admin*" matches "administrator"
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_like_prefix.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_like_prefix.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -28,7 +28,7 @@ GET /test.html
 
 === TEST 2: like - prefix wildcard "admin*" does not match "user"
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_like_prefix.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_like_prefix.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -46,7 +46,7 @@ GET /test.html
 
 === TEST 3: like - embedded wildcard "a*c" matches "abc"
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_like_middle.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_like_middle.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -64,7 +64,7 @@ GET /test.html
 
 === TEST 4: like - embedded wildcard "a*c" matches "axyzc"
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_like_middle.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_like_middle.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -82,7 +82,7 @@ GET /test.html
 
 === TEST 5: like - escaped `\*` matches literal "*" only
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_like_escape.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_like_escape.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -100,7 +100,7 @@ GET /test.html
 
 === TEST 6: like - escaped `\*` does not match "adXmin"
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_like_escape.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_like_escape.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -118,7 +118,7 @@ GET /test.html
 
 === TEST 7: string escape `\t` matches header containing tab
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_escape_tab.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_escape_tab.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -136,7 +136,7 @@ GET /test.html
 
 === TEST 8: string escape `\xHH` - "\x41dmin" matches "Admin"
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_escape_hex.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_escape_hex.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -154,7 +154,7 @@ GET /test.html
 
 === TEST 9: string escape `\u{4e2d}` - matches UTF-8 `中`
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/str_escape_unicode.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/str_escape_unicode.cedar;
 --- config
     location /test.html {
         auth_cedar on;

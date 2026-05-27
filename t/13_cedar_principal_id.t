@@ -10,7 +10,7 @@ __DATA__
 
 === TEST 1: auth_cedar_principal_id - literal matches the policy
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -28,7 +28,7 @@ OK
 
 === TEST 2: auth_cedar_principal_id - literal mismatch denies
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -44,7 +44,7 @@ GET /test.html
 
 === TEST 3: auth_cedar_principal_id - sourced from a request header variable
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -64,7 +64,7 @@ OK
 
 === TEST 4: auth_cedar_principal_id - empty variable falls through to deny
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -80,7 +80,7 @@ GET /test.html
 
 === TEST 5: principal_id is inherited from server to location
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     auth_cedar_principal_id "alice";
     location /test.html {
@@ -98,7 +98,7 @@ OK
 
 === TEST 6: location-level principal_id overrides server-level
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     auth_cedar_principal_id "alice";
     location /test.html {
@@ -116,7 +116,7 @@ GET /test.html
 === TEST 7: deny log reports the resolved principal id, not
             $remote_user (which auth_cedar_principal_id replaces)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -138,7 +138,7 @@ principal="mallory"
             (no auth_cedar_principal_id; principal id comes from Basic
             auth's $remote_user, exercising the back-compat path)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     location /test.html {
         auth_basic           "test";
@@ -161,7 +161,7 @@ OK
             (bob authenticates but principal_id_match only permits
             "alice", so Cedar must still deny)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     location /test.html {
         auth_basic           "test";
@@ -181,7 +181,7 @@ Authorization: Basic Ym9iOnNlY3JldA==
 === TEST 10: principal_id + principal_attr - both reach the policy
              (id and role match, expect 200)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_attr.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_attr.cedar;
 --- config
     location /test.html {
         auth_cedar                on;
@@ -205,7 +205,7 @@ OK
              (catches a regression where principal_attr would stop
              reaching the policy when principal_id is also set)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_attr.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_attr.cedar;
 --- config
     location /test.html {
         auth_cedar                on;
@@ -227,7 +227,7 @@ X-Role: viewer
              (catches a regression where principal_id would be ignored
              when principal_attr is also set)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_attr.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_attr.cedar;
 --- config
     location /test.html {
         auth_cedar                on;
@@ -253,7 +253,7 @@ X-Role: admin
              configured empty principal_id must take precedence and
              deny)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/principal_id_match.cedar;
 --- config
     location /test.html {
         auth_basic              "test";

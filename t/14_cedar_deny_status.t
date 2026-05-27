@@ -10,7 +10,7 @@ __DATA__
 
 === TEST 1: auth_cedar_deny_status 400 - lower bound accepted
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -23,7 +23,7 @@ GET /test.html
 
 === TEST 2: auth_cedar_deny_status 599 - upper bound accepted
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -36,7 +36,7 @@ GET /test.html
 
 === TEST 3: auth_cedar_deny_status 399 - below 4xx rejected at config time
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -49,7 +49,7 @@ invalid status code "399"
 
 === TEST 4: auth_cedar_deny_status 600 - above 5xx rejected at config time
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -62,7 +62,7 @@ invalid status code "600"
 
 === TEST 5: auth_cedar_deny_status absent - default is 403
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
 --- config
     location /test.html {
         auth_cedar on;

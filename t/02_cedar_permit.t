@@ -10,7 +10,7 @@ __DATA__
 
 === TEST 1: permit GET - allowed
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -27,7 +27,7 @@ OK
 
 === TEST 2: permit GET - POST denied (no matching permit)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -42,7 +42,7 @@ POST /test.html
 
 === TEST 3: multi action set - GET allowed
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/multi_action.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/multi_action.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -57,7 +57,7 @@ GET /test.html
 
 === TEST 4: multi action set - POST allowed (405 = passed precontent phase)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/multi_action.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/multi_action.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -72,7 +72,7 @@ POST /test.html
 
 === TEST 5: multi action set - DELETE denied
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/multi_action.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/multi_action.cedar;
 --- config
     location /test.html {
         auth_cedar on;

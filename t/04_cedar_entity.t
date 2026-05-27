@@ -10,7 +10,7 @@ __DATA__
 
 === TEST 1: principal attr mapping - role admin allowed
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -30,7 +30,7 @@ OK
 
 === TEST 2: principal attr mapping - role user denied (no matching permit)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -48,7 +48,7 @@ GET /test.html
 
 === TEST 3: tenant isolation - same tenant allowed (admin)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -66,7 +66,7 @@ GET /test.html
 
 === TEST 4: tenant isolation - different tenant denied
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -84,7 +84,7 @@ GET /test.html
 
 === TEST 5: custom resource type
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -100,7 +100,7 @@ GET /test.html
 
 === TEST 6: context.ip - loopback allowed
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -117,7 +117,7 @@ OK
 
 === TEST 7: principal attr with nginx variable expansion
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -140,7 +140,7 @@ OK
 
 === TEST 8: principal attr with nginx variable - denied role
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -161,7 +161,7 @@ X-Tenant: acme
 
 === TEST 9: principal attr with nginx variable - empty header skipped
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -179,7 +179,7 @@ GET /test.html
 
 === TEST 10: custom deny status
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -195,7 +195,7 @@ GET /test.html
 
 === TEST 11: context.ip - user override with matching header allows
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -215,7 +215,7 @@ OK
 
 === TEST 12: context.ip - user override with non-matching header denies
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -233,7 +233,7 @@ GET /test.html
 
 === TEST 13: duplicate principal_attr name rejected at config time
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -247,7 +247,7 @@ duplicate "auth_cedar_principal_attr" name "role"
 
 === TEST 14: duplicate resource_attr name rejected at config time
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -261,7 +261,7 @@ duplicate "auth_cedar_resource_attr" name "tenant"
 
 === TEST 15: duplicate context_attr name rejected at config time
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/context_ip.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -275,7 +275,7 @@ duplicate "auth_cedar_context_attr" name "ip"
 
 === TEST 16: same name across different attr scopes is allowed
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/when_unless.cedar;
 --- config
     location /test.html {
         auth_cedar on;

@@ -10,7 +10,7 @@ __DATA__
 
 === TEST 1: $cedar_result - allow
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -28,7 +28,7 @@ X-Cedar-Result: allow
 
 === TEST 2: $cedar_decision - allow (1)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -46,7 +46,7 @@ X-Cedar-Decision: 1
 
 === TEST 3: $cedar_result - deny
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -64,7 +64,7 @@ X-Cedar-Result: deny
 
 === TEST 4: $cedar_decision - deny (0)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/default_deny.cedar;
 --- config
     location /test.html {
         auth_cedar on;
@@ -82,7 +82,7 @@ X-Cedar-Decision: 0
 
 === TEST 5: $cedar_result - not evaluated (auth_cedar off)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
 --- config
     location /test.html {
         auth_cedar off;
@@ -100,7 +100,7 @@ GET /test.html
 
 === TEST 6: $cedar_decision - not evaluated (auth_cedar off)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
 --- config
     location /test.html {
         auth_cedar off;
@@ -118,7 +118,7 @@ GET /test.html
 
 === TEST 7: $cedar_result in log format
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
     log_format cedar '$request_method $uri cedar_result=$cedar_result';
 --- config
     location /test.html {

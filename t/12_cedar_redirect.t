@@ -13,7 +13,7 @@ __DATA__
             admin, then content phase 404 redirects to /forbidden which
             re-runs the policy under role=guest and denies
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/redirect_admin.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/redirect_admin.cedar;
 --- config
     location /allowed {
         auth_cedar on;
@@ -34,7 +34,7 @@ GET /allowed
             forwards to /lax.html which re-runs the policy under
             role=admin and allows
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/redirect_admin.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/redirect_admin.cedar;
 --- config
     location /strict {
         auth_cedar on;
@@ -58,7 +58,7 @@ LAX
 === TEST 3: re-entering the same location reuses the cached decision
             (sanity check that the cache is not invalidated unnecessarily)
 --- http_config
-    auth_cedar_policy_file $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/basic_permit.cedar;
 --- config
     location /test.html {
         auth_cedar on;
