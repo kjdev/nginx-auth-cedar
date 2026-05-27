@@ -1,5 +1,14 @@
 # Changelog
 
+## [f7cfafa](../../commit/f7cfafa) - 2026-05-28
+
+### Changed
+
+- **BREAKING**: `auth_cedar_policy_file` and `auth_cedar` require explicit policy ids
+  - `auth_cedar_policy_file <id> <file> [<file>...]` declares a named policy set under a non-reserved id (`[A-Za-z0-9_-]+`); the old single-argument form (`auth_cedar_policy_file <path>;`) is no longer accepted, and the id namespace is unique across the http block so the same id cannot be declared twice
+  - `auth_cedar` now takes `on` (apply the union of every declared id), `off` (skip the handler), or a whitespace-separated list of ids (apply only the listed sets); `on`/`off` are reserved and cannot be used as ids, mixed with ids, or repeated, and every cross-reference is resolved at configuration time so an undeclared id or `auth_cedar on` without any policy file aborts `nginx -t` / startup with an `emerg` message rather than failing per request
+  - Policy selection is resolved into a per-location `nxe_cedar_policy_set_t` in `merge_loc_conf` and shared across `auth_cedar on` locations via a single union built once in `init_main_conf`; the nxe-cedar evaluator is unchanged because the union of policy sets is still a single policy set, so the forbid-priority decision model continues to apply unmodified
+
 ## [58af33c](../../commit/58af33c) - 2026-05-27
 
 ### Fixed
