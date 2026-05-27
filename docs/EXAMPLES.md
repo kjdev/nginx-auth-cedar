@@ -17,7 +17,7 @@ load_module modules/ngx_http_auth_cedar_module.so;
 load_module modules/ngx_http_auth_jwt_module.so;
 
 http {
-    auth_cedar_policy_file /etc/nginx/policies/rbac.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/rbac.cedar;
 
     server {
         listen 80;
@@ -88,7 +88,7 @@ permit.
 
 ```nginx
 http {
-    auth_cedar_policy_file /etc/nginx/policies/tenant_boundary.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/tenant_boundary.cedar;
 
     server {
         auth_cedar_principal_attr tenant   $jwt_claim_tenant;
@@ -131,7 +131,7 @@ proxy header; `nginx-auth-cedar` then sees the right address in
 
 ```nginx
 http {
-    auth_cedar_policy_file /etc/nginx/policies/ip_allowlist.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/ip_allowlist.cedar;
 
     server {
         # Trust X-Forwarded-For from the upstream load balancer.
@@ -172,7 +172,7 @@ fact that `action` is set from `$request_method`.
 
 ```nginx
 http {
-    auth_cedar_policy_file /etc/nginx/policies/method_aware.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/method_aware.cedar;
 
     server {
         auth_cedar_principal_attr role $jwt_claim_role;
@@ -214,7 +214,7 @@ Share a single policy file across multiple locations, using
 
 ```nginx
 http {
-    auth_cedar_policy_file /etc/nginx/policies/shared.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/shared.cedar;
 
     server {
         auth_cedar_principal_attr role $jwt_claim_role;
@@ -262,7 +262,7 @@ as nginx variables.
 
 ```nginx
 http {
-    auth_cedar_policy_file /etc/nginx/policies/api.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/api.cedar;
 
     upstream introspect {
         server 127.0.0.1:8000;
@@ -326,7 +326,7 @@ and inject it through `context`.
 
 ```nginx
 http {
-    auth_cedar_policy_file /etc/nginx/policies/hours.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/hours.cedar;
 
     # Extract the hour from $time_iso8601 (HH part).
     map $time_iso8601 $hour_of_day {
@@ -378,7 +378,7 @@ log_format auth '$remote_addr - $remote_user [$time_local] '
                 'advice="$cedar_advice"';
 
 http {
-    auth_cedar_policy_file /etc/nginx/policies/audit.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/audit.cedar;
 
     server {
         access_log /var/log/nginx/auth.log auth;

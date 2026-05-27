@@ -13,7 +13,7 @@ external decision service, no subrequest, no Rust runtime.
 
 ```nginx
 http {
-    auth_cedar_policy_file /etc/nginx/policies/api.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/api.cedar;
 
     server {
         listen 80;
@@ -151,7 +151,7 @@ permit (
 load_module modules/ngx_http_auth_cedar_module.so;
 
 http {
-    auth_cedar_policy_file /etc/nginx/policies/policy.cedar;
+    auth_cedar_policy_file def /etc/nginx/policies/policy.cedar;
 
     server {
         listen 80;
@@ -209,10 +209,10 @@ location.
 
 ```nginx
 # main { }
-auth_cedar_policy_file <path>;            # load policy file (multiple allowed)
+auth_cedar_policy_file <id> <path> [<path>...]; # declare a policy set under an id
 
-# server { } / location { }
-auth_cedar               on | off;        # enable for this location
+# location { }
+auth_cedar  on | off | <id> [<id>...];    # apply all / none / selected ids
 auth_cedar_principal_id   <value>;        # principal entity id (default: $remote_user)
 auth_cedar_principal_attr <name> <var>;   # principal attribute mapping
 auth_cedar_resource_type  <type>;         # resource entity type

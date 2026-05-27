@@ -33,45 +33,74 @@ line is injected into `/etc/nginx/nginx.conf` automatically.
 ### auth_cedar
 
 ```
-Syntax:  auth_cedar on | off;
+Syntax:  auth_cedar on | off | id [id ...];
 Default: auth_cedar off;
-Context: server, location, if in location
+Context: location, if in location
 ```
 
-Enables or disables Cedar enforcement for the location. When `on`, the
-handler runs at the PRECONTENT phase; when `off`, the handler returns
-immediately and no policy is evaluated.
+Selects which Cedar policy set applies to the location. The argument is
+one of:
 
-Enabling `auth_cedar on` without an `auth_cedar_policy_file` configured
-returns `500 Internal Server Error` and logs
-`cedar: no policy file configured`.
+- `on` — apply the union of **every** policy set declared via
+  `auth_cedar_policy_file`.
+- `off` — skip the handler entirely.
+- `id [id ...]` — apply the union of the policy sets declared under the
+  listed ids only. Separate multiple ids with whitespace.
+
+```nginx
+location /api {
+    auth_cedar api;            # apply the "api" id only
+}
+location /admin {
+    auth_cedar api admin;      # union of "api" and "admin"
+}
+location /health {
+    auth_cedar off;            # skip authorization
+}
+```
+
+`on` and `off` are reserved words and cannot be used as ids; mixing
+`on` / `off` with one or more ids in the same directive is rejected at
+configuration time (`emerg`). Repeating the same id within one directive
+or referencing an id that was not declared via `auth_cedar_policy_file`
+is rejected the same way, aborting `nginx -t` / startup.
+
+Using `auth_cedar on` without any `auth_cedar_policy_file` directive is
+also rejected at configuration time.
 
 ### auth_cedar_policy_file
 
 ```
-Syntax:  auth_cedar_policy_file path;
+Syntax:  auth_cedar_policy_file id path [path ...];
 Default: -
 Context: http
 ```
 
-Loads a Cedar policy file at configuration time. The file is read into
-the configuration pool, parsed via `nxe_cedar_parse()`, and merged into
-a single policy set shared by every `server` / `location` that enables
-`auth_cedar`.
+Loads one or more Cedar policy files under the given id. Multiple paths
+on a single directive are merged into one policy set, which is then
+selectable from `auth_cedar` by id.
 
-The directive may be repeated. Each invocation appends its policies to
-the shared policy set; policy IDs (the `@id` annotation) are **not**
-deduplicated, so two files declaring the same `@id` will both contribute
-to the evaluation. The order across files matches the order of
-directives.
+The id must match `[A-Za-z0-9_-]+`. The empty string, `on`, and `off`
+are reserved and rejected.
+
+Declaring the same id with more than one `auth_cedar_policy_file`
+directive is rejected at configuration time (`emerg`). To bundle several
+files under one id, list them all on a single directive.
+
+Policy ordering follows the order in which the files appear on the
+directive. Policy `@id` annotations are **not deduplicated across
+files**, so two files declaring the same `@id` will both contribute to
+the evaluation.
 
 Relative paths are resolved against the nginx prefix (the same rules as
 `access_log` or `include`).
 
 ```nginx
 http {
-    auth_cedar_policy_file /etc/nginx/policies/base.cedar;
-    auth_cedar_policy_file /etc/nginx/policies/tenants.cedar;
+    auth_cedar_policy_file api
+        /etc/nginx/policies/api_base.cedar
+        /etc/nginx/policies/api_tenant.cedar;
+    auth_cedar_policy_file admin /etc/nginx/policies/admin.cedar;
 }
 ```
 
@@ -347,12 +376,12 @@ The module follows nginx's standard server-to-location merge rules:
 
 | Setting | Merge rule | Default |
 | --- | --- | --- |
-| `auth_cedar` | child overrides parent | `off` |
+| `auth_cedar` | inherits the parent's mode (`on` / `off` / id list) when the child does not set `auth_cedar`; otherwise the child overrides the parent entirely | `off` |
 | `auth_cedar_resource_type` | child overrides parent (string merge) | `Resource` |
 | `auth_cedar_principal_id` | child overrides parent | — (falls back to `$remote_user`) |
 | `auth_cedar_principal_attr` / `auth_cedar_resource_attr` / `auth_cedar_context_attr` | child overrides parent **entirely** if the child defines any mappings; otherwise inherits the parent list | — |
 | `auth_cedar_deny_status` | child overrides parent | `403` |
-| `auth_cedar_policy_file` | global (`http` context only); shared by all locations | — |
+| `auth_cedar_policy_file` | global (`http` context only); the id namespace is unique across the http block | — |
 
 The "child overrides entirely" behavior for the attribute-mapping
 directives is important: declaring a single `auth_cedar_principal_attr`
