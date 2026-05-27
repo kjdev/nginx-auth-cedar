@@ -16,10 +16,14 @@ static ngx_int_t ngx_http_auth_cedar_handler(ngx_http_request_t *r);
 static ngx_int_t ngx_http_auth_cedar_preconfiguration(ngx_conf_t *cf);
 static ngx_int_t ngx_http_auth_cedar_postconfiguration(ngx_conf_t *cf);
 static void *ngx_http_auth_cedar_create_main_conf(ngx_conf_t *cf);
+static char *ngx_http_auth_cedar_init_main_conf(ngx_conf_t *cf,
+    void *conf);
 static void *ngx_http_auth_cedar_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_auth_cedar_merge_loc_conf(ngx_conf_t *cf,
     void *parent, void *child);
 
+static char *ngx_http_auth_cedar(ngx_conf_t *cf,
+    ngx_command_t *cmd, void *conf);
 static char *ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
 static char *ngx_http_auth_cedar_principal_id(ngx_conf_t *cf,
@@ -29,18 +33,32 @@ static char *ngx_http_auth_cedar_attr(ngx_conf_t *cf,
 static char *ngx_http_auth_cedar_deny_status(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
 
+static ngx_int_t ngx_http_auth_cedar_validate_id(ngx_str_t *id);
+static nxe_cedar_policy_set_t *ngx_http_auth_cedar_new_policy_set(
+    ngx_conf_t *cf);
+static nxe_cedar_policy_set_t *ngx_http_auth_cedar_parse_file(
+    ngx_conf_t *cf, ngx_str_t *path);
+static ngx_int_t ngx_http_auth_cedar_append_policies(ngx_conf_t *cf,
+    nxe_cedar_policy_set_t *dst, nxe_cedar_policy_set_t *src);
+static ngx_http_auth_cedar_named_policy_t *
+    ngx_http_auth_cedar_find_named(
+    ngx_http_auth_cedar_main_conf_t *mcf, ngx_str_t *id);
+static nxe_cedar_policy_set_t *ngx_http_auth_cedar_build_selected(
+    ngx_conf_t *cf, ngx_http_auth_cedar_main_conf_t *mcf,
+    ngx_array_t *policy_ids, ngx_str_t *loc_name);
+
 
 static ngx_command_t ngx_http_auth_cedar_commands[] = {
 
     { ngx_string("auth_cedar"),
-      NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
+      NGX_HTTP_LOC_CONF | NGX_HTTP_LIF_CONF | NGX_CONF_1MORE,
+      ngx_http_auth_cedar,
       NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_auth_cedar_loc_conf_t, enable),
+      0,
       NULL },
 
     { ngx_string("auth_cedar_policy_file"),
-      NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
+      NGX_HTTP_MAIN_CONF | NGX_CONF_2MORE,
       ngx_http_auth_cedar_policy_file,
       NGX_HTTP_MAIN_CONF_OFFSET,
       0,
@@ -97,7 +115,7 @@ static ngx_http_module_t ngx_http_auth_cedar_module_ctx = {
     ngx_http_auth_cedar_postconfiguration,  /* postconfiguration */
 
     ngx_http_auth_cedar_create_main_conf,   /* create main configuration */
-    NULL,                                   /* init main configuration */
+    ngx_http_auth_cedar_init_main_conf,     /* init main configuration */
 
     NULL,                                   /* create server configuration */
     NULL,                                   /* merge server configuration */
@@ -127,23 +145,27 @@ static ngx_int_t
 ngx_http_auth_cedar_handler(ngx_http_request_t *r)
 {
     ngx_http_auth_cedar_loc_conf_t *lcf;
-    ngx_http_auth_cedar_main_conf_t *mcf;
     ngx_http_auth_cedar_ctx_t *ctx;
     nxe_cedar_eval_ctx_t *eval_ctx;
     nxe_cedar_decision_t decision;
 
     lcf = ngx_http_get_module_loc_conf(r, ngx_http_auth_cedar_module);
 
-    if (!lcf->enable) {
+    if (lcf->mode == NGX_HTTP_AUTH_CEDAR_MODE_OFF
+        || lcf->mode == NGX_HTTP_AUTH_CEDAR_MODE_UNSET)
+    {
         return NGX_DECLINED;
     }
 
-    mcf = ngx_http_get_module_main_conf(r,
-                                        ngx_http_auth_cedar_module);
-
-    if (mcf->policy_set == NULL) {
+    /* Defensive fail-closed: merge_loc_conf must populate
+       resolved_policy_set whenever mode is ON or SELECTIVE, but if
+       that invariant is ever broken we refuse the request instead of
+       silently bypassing authorization. */
+    if (lcf->resolved_policy_set == NULL) {
         ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
-                      "cedar: no policy file configured");
+                      "cedar: resolved_policy_set is NULL"
+                      " (mode=%ui); refusing to fail open",
+                      lcf->mode);
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -183,7 +205,7 @@ ngx_http_auth_cedar_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    decision = nxe_cedar_eval_detail(mcf->policy_set, eval_ctx,
+    decision = nxe_cedar_eval_detail(lcf->resolved_policy_set, eval_ctx,
                                      r->connection->log,
                                      &ctx->detail);
 
@@ -248,6 +270,42 @@ ngx_http_auth_cedar_create_main_conf(ngx_conf_t *cf)
 }
 
 
+static char *
+ngx_http_auth_cedar_init_main_conf(ngx_conf_t *cf, void *conf)
+{
+    ngx_http_auth_cedar_main_conf_t *mcf = conf;
+    ngx_http_auth_cedar_named_policy_t *named;
+    ngx_uint_t i;
+
+    if (mcf->named_policy_sets == NULL
+        || mcf->named_policy_sets->nelts == 0)
+    {
+        /* No auth_cedar_policy_file directives were given. Locations
+           that try to enable auth_cedar will be rejected later in
+           merge_loc_conf when they fail to resolve any policy set. */
+        return NGX_CONF_OK;
+    }
+
+    mcf->all_policy_set = ngx_http_auth_cedar_new_policy_set(cf);
+    if (mcf->all_policy_set == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    named = mcf->named_policy_sets->elts;
+
+    for (i = 0; i < mcf->named_policy_sets->nelts; i++) {
+        if (ngx_http_auth_cedar_append_policies(cf,
+                mcf->all_policy_set, named[i].policy_set)
+            != NGX_OK)
+        {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    return NGX_CONF_OK;
+}
+
+
 static void *
 ngx_http_auth_cedar_create_loc_conf(ngx_conf_t *cf)
 {
@@ -259,7 +317,8 @@ ngx_http_auth_cedar_create_loc_conf(ngx_conf_t *cf)
         return NULL;
     }
 
-    conf->enable = NGX_CONF_UNSET;
+    /* mode left as NGX_HTTP_AUTH_CEDAR_MODE_UNSET (0) by pcalloc;
+       policy_ids and resolved_policy_set also start as NULL. */
     conf->deny_status = NGX_CONF_UNSET_UINT;
 
     conf->principal_id = NGX_CONF_UNSET_PTR;
@@ -277,8 +336,25 @@ ngx_http_auth_cedar_merge_loc_conf(ngx_conf_t *cf,
 {
     ngx_http_auth_cedar_loc_conf_t *prev = parent;
     ngx_http_auth_cedar_loc_conf_t *conf = child;
+    ngx_http_auth_cedar_main_conf_t *mcf;
+    ngx_http_core_loc_conf_t *clcf;
 
-    ngx_conf_merge_value(conf->enable, prev->enable, 0);
+    /* mode merge: when the child did not set auth_cedar, inherit the
+       parent's mode (and the parent's policy_ids if SELECTIVE). When
+       neither set anything, default to OFF. */
+    if (conf->mode == NGX_HTTP_AUTH_CEDAR_MODE_UNSET) {
+        conf->mode = prev->mode;
+
+        if (conf->mode == NGX_HTTP_AUTH_CEDAR_MODE_SELECTIVE
+            && conf->policy_ids == NULL)
+        {
+            conf->policy_ids = prev->policy_ids;
+        }
+
+        if (conf->mode == NGX_HTTP_AUTH_CEDAR_MODE_UNSET) {
+            conf->mode = NGX_HTTP_AUTH_CEDAR_MODE_OFF;
+        }
+    }
 
     ngx_conf_merge_str_value(conf->resource_type,
                              prev->resource_type, "Resource");
@@ -295,17 +371,97 @@ ngx_http_auth_cedar_merge_loc_conf(ngx_conf_t *cf,
     ngx_conf_merge_uint_value(conf->deny_status,
                               prev->deny_status, 403);
 
+    if (conf->mode == NGX_HTTP_AUTH_CEDAR_MODE_OFF) {
+        conf->resolved_policy_set = NULL;
+        return NGX_CONF_OK;
+    }
+
+    mcf = ngx_http_conf_get_module_main_conf(cf,
+                                             ngx_http_auth_cedar_module);
+    clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
+
+    if (conf->mode == NGX_HTTP_AUTH_CEDAR_MODE_ON) {
+        if (mcf->all_policy_set == NULL) {
+            ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
+                          "\"auth_cedar on\" in location \"%V\" "
+                          "requires at least one "
+                          "\"auth_cedar_policy_file\"",
+                          &clcf->name);
+            return NGX_CONF_ERROR;
+        }
+        conf->resolved_policy_set = mcf->all_policy_set;
+        return NGX_CONF_OK;
+    }
+
+    /* SELECTIVE */
+    conf->resolved_policy_set = ngx_http_auth_cedar_build_selected(
+        cf, mcf, conf->policy_ids, &clcf->name);
+    if (conf->resolved_policy_set == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
     return NGX_CONF_OK;
 }
 
 
-static char *
-ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
-    ngx_command_t *cmd, void *conf)
+static ngx_int_t
+ngx_http_auth_cedar_validate_id(ngx_str_t *id)
 {
-    ngx_http_auth_cedar_main_conf_t *mcf = conf;
+    ngx_uint_t i;
+    u_char c;
 
-    ngx_str_t *value, file_path;
+    if (id->len == 0) {
+        return NGX_ERROR;
+    }
+
+    /* reserved keywords */
+    if (id->len == 2 && ngx_strncmp(id->data, "on", 2) == 0) {
+        return NGX_ERROR;
+    }
+    if (id->len == 3 && ngx_strncmp(id->data, "off", 3) == 0) {
+        return NGX_ERROR;
+    }
+
+    for (i = 0; i < id->len; i++) {
+        c = id->data[i];
+        if (!((c >= 'a' && c <= 'z')
+              || (c >= 'A' && c <= 'Z')
+              || (c >= '0' && c <= '9')
+              || c == '_'
+              || c == '-'))
+        {
+            return NGX_ERROR;
+        }
+    }
+
+    return NGX_OK;
+}
+
+
+static nxe_cedar_policy_set_t *
+ngx_http_auth_cedar_new_policy_set(ngx_conf_t *cf)
+{
+    nxe_cedar_policy_set_t *pset;
+
+    pset = ngx_pcalloc(cf->pool, sizeof(nxe_cedar_policy_set_t));
+    if (pset == NULL) {
+        return NULL;
+    }
+
+    pset->policies = ngx_array_create(cf->pool, 4,
+                                      sizeof(nxe_cedar_policy_t));
+    if (pset->policies == NULL) {
+        return NULL;
+    }
+
+    return pset;
+}
+
+
+static nxe_cedar_policy_set_t *
+ngx_http_auth_cedar_parse_file(ngx_conf_t *cf, ngx_str_t *path)
+{
+    ngx_str_t file_path;
     u_char *p, *data;
     size_t size;
     ssize_t n;
@@ -314,19 +470,16 @@ ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
     ngx_file_info_t fi;
     ngx_str_t text;
     nxe_cedar_policy_set_t *pset;
-    nxe_cedar_policy_t *src, *dst;
-    ngx_uint_t i;
 
-    value = cf->args->elts;
-    file_path = value[1];
+    file_path = *path;
 
     if (ngx_conf_full_name(cf->cycle, &file_path, 1) != NGX_OK) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     p = ngx_pnalloc(cf->pool, file_path.len + 1);
     if (p == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     ngx_memcpy(p, file_path.data, file_path.len);
@@ -339,7 +492,7 @@ ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
         ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
                            ngx_open_file_n " \"%V\" failed",
                            &file_path);
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     if (ngx_fd_info(fd, &fi) == NGX_FILE_ERROR) {
@@ -362,7 +515,6 @@ ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
     }
 
     ngx_memzero(&file, sizeof(ngx_file_t));
-
     file.fd = fd;
     file.name = file_path;
     file.log = cf->log;
@@ -406,38 +558,10 @@ ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "cedar policy parse failed \"%V\"",
                            &file_path);
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
-    if (mcf->policy_set == NULL) {
-        mcf->policy_set = pset;
-        return NGX_CONF_OK;
-    }
-
-    if (pset->policies == NULL || pset->policies->nelts == 0) {
-        return NGX_CONF_OK;
-    }
-
-    /* A previously loaded policy set may have parsed to an empty
-       (NULL) policies array if the first file was blank; promote the
-       incoming array in that case rather than dereferencing a NULL. */
-    if (mcf->policy_set->policies == NULL) {
-        mcf->policy_set->policies = pset->policies;
-        return NGX_CONF_OK;
-    }
-
-    src = pset->policies->elts;
-
-    for (i = 0; i < pset->policies->nelts; i++) {
-        dst = ngx_array_push(mcf->policy_set->policies);
-        if (dst == NULL) {
-            return NGX_CONF_ERROR;
-        }
-
-        *dst = src[i];
-    }
-
-    return NGX_CONF_OK;
+    return pset;
 
 failed:
 
@@ -447,7 +571,282 @@ failed:
                            &file_path);
     }
 
-    return NGX_CONF_ERROR;
+    return NULL;
+}
+
+
+static ngx_int_t
+ngx_http_auth_cedar_append_policies(ngx_conf_t *cf,
+    nxe_cedar_policy_set_t *dst, nxe_cedar_policy_set_t *src)
+{
+    nxe_cedar_policy_t *s, *d;
+    ngx_uint_t i;
+
+    if (src == NULL
+        || src->policies == NULL
+        || src->policies->nelts == 0)
+    {
+        return NGX_OK;
+    }
+
+    if (dst->policies == NULL) {
+        dst->policies = ngx_array_create(cf->pool,
+                                         src->policies->nelts,
+                                         sizeof(nxe_cedar_policy_t));
+        if (dst->policies == NULL) {
+            return NGX_ERROR;
+        }
+    }
+
+    s = src->policies->elts;
+
+    for (i = 0; i < src->policies->nelts; i++) {
+        d = ngx_array_push(dst->policies);
+        if (d == NULL) {
+            return NGX_ERROR;
+        }
+
+        *d = s[i];
+    }
+
+    return NGX_OK;
+}
+
+
+static ngx_http_auth_cedar_named_policy_t *
+ngx_http_auth_cedar_find_named(
+    ngx_http_auth_cedar_main_conf_t *mcf, ngx_str_t *id)
+{
+    ngx_http_auth_cedar_named_policy_t *named;
+    ngx_uint_t i;
+
+    if (mcf->named_policy_sets == NULL) {
+        return NULL;
+    }
+
+    named = mcf->named_policy_sets->elts;
+
+    for (i = 0; i < mcf->named_policy_sets->nelts; i++) {
+        if (named[i].id.len == id->len
+            && ngx_strncmp(named[i].id.data, id->data, id->len) == 0)
+        {
+            return &named[i];
+        }
+    }
+
+    return NULL;
+}
+
+
+static nxe_cedar_policy_set_t *
+ngx_http_auth_cedar_build_selected(ngx_conf_t *cf,
+    ngx_http_auth_cedar_main_conf_t *mcf, ngx_array_t *policy_ids,
+    ngx_str_t *loc_name)
+{
+    nxe_cedar_policy_set_t *merged;
+    ngx_http_auth_cedar_named_policy_t *named;
+    ngx_str_t *ids;
+    ngx_uint_t i;
+
+    if (policy_ids == NULL || policy_ids->nelts == 0) {
+        return NULL;
+    }
+
+    ids = policy_ids->elts;
+
+    /* Single id: share the named policy_set pointer so a SELECTIVE
+       location with one id costs no extra allocation. */
+    if (policy_ids->nelts == 1) {
+        named = ngx_http_auth_cedar_find_named(mcf, &ids[0]);
+        if (named == NULL) {
+            ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
+                          "\"auth_cedar\" in location \"%V\" "
+                          "references undefined policy id \"%V\"",
+                          loc_name, &ids[0]);
+            return NULL;
+        }
+        return named->policy_set;
+    }
+
+    merged = ngx_http_auth_cedar_new_policy_set(cf);
+    if (merged == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < policy_ids->nelts; i++) {
+        named = ngx_http_auth_cedar_find_named(mcf, &ids[i]);
+        if (named == NULL) {
+            ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
+                          "\"auth_cedar\" in location \"%V\" "
+                          "references undefined policy id \"%V\"",
+                          loc_name, &ids[i]);
+            return NULL;
+        }
+
+        if (ngx_http_auth_cedar_append_policies(cf, merged,
+                                                named->policy_set)
+            != NGX_OK)
+        {
+            return NULL;
+        }
+    }
+
+    return merged;
+}
+
+
+static char *
+ngx_http_auth_cedar(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    ngx_http_auth_cedar_loc_conf_t *lcf = conf;
+
+    ngx_str_t *value, *id_slot;
+    ngx_uint_t i, j;
+
+    if (lcf->mode != NGX_HTTP_AUTH_CEDAR_MODE_UNSET) {
+        return "is duplicate";
+    }
+
+    value = cf->args->elts;
+
+    /* "auth_cedar on" / "auth_cedar off" */
+    if (cf->args->nelts == 2) {
+        if (value[1].len == 2
+            && ngx_strncmp(value[1].data, "on", 2) == 0)
+        {
+            lcf->mode = NGX_HTTP_AUTH_CEDAR_MODE_ON;
+            return NGX_CONF_OK;
+        }
+        if (value[1].len == 3
+            && ngx_strncmp(value[1].data, "off", 3) == 0)
+        {
+            lcf->mode = NGX_HTTP_AUTH_CEDAR_MODE_OFF;
+            return NGX_CONF_OK;
+        }
+    }
+
+    /* Otherwise: every argument is a policy id. Mixing on/off with ids
+       is rejected so users do not accidentally write "auth_cedar on
+       extra" and assume the extra id had any effect. */
+    lcf->policy_ids = ngx_array_create(cf->pool,
+                                       cf->args->nelts - 1,
+                                       sizeof(ngx_str_t));
+    if (lcf->policy_ids == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    for (i = 1; i < cf->args->nelts; i++) {
+        if ((value[i].len == 2
+             && ngx_strncmp(value[i].data, "on", 2) == 0)
+            || (value[i].len == 3
+                && ngx_strncmp(value[i].data, "off", 3) == 0))
+        {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "\"on\"/\"off\" cannot be mixed with "
+                               "policy ids in \"auth_cedar\"");
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_auth_cedar_validate_id(&value[i]) != NGX_OK) {
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                               "invalid policy id \"%V\" in "
+                               "\"auth_cedar\" (must match "
+                               "[A-Za-z0-9_-]+ and not be a reserved "
+                               "keyword)", &value[i]);
+            return NGX_CONF_ERROR;
+        }
+
+        id_slot = lcf->policy_ids->elts;
+        for (j = 0; j < lcf->policy_ids->nelts; j++) {
+            if (id_slot[j].len == value[i].len
+                && ngx_strncmp(id_slot[j].data, value[i].data,
+                               value[i].len)
+                   == 0)
+            {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "duplicate policy id \"%V\" in "
+                                   "\"auth_cedar\"", &value[i]);
+                return NGX_CONF_ERROR;
+            }
+        }
+
+        id_slot = ngx_array_push(lcf->policy_ids);
+        if (id_slot == NULL) {
+            return NGX_CONF_ERROR;
+        }
+        *id_slot = value[i];
+    }
+
+    lcf->mode = NGX_HTTP_AUTH_CEDAR_MODE_SELECTIVE;
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
+ngx_http_auth_cedar_policy_file(ngx_conf_t *cf,
+    ngx_command_t *cmd, void *conf)
+{
+    ngx_http_auth_cedar_main_conf_t *mcf = conf;
+
+    ngx_str_t *value;
+    ngx_uint_t i;
+    nxe_cedar_policy_set_t *pset, *merged;
+    ngx_http_auth_cedar_named_policy_t *named;
+
+    value = cf->args->elts;
+
+    if (ngx_http_auth_cedar_validate_id(&value[1]) != NGX_OK) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "invalid policy id \"%V\" in "
+                           "\"auth_cedar_policy_file\" (must match "
+                           "[A-Za-z0-9_-]+ and not be a reserved "
+                           "keyword \"on\"/\"off\")", &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    if (mcf->named_policy_sets == NULL) {
+        mcf->named_policy_sets = ngx_array_create(cf->pool, 4,
+            sizeof(ngx_http_auth_cedar_named_policy_t));
+        if (mcf->named_policy_sets == NULL) {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    if (ngx_http_auth_cedar_find_named(mcf, &value[1]) != NULL) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "duplicate policy id \"%V\" in "
+                           "\"auth_cedar_policy_file\"", &value[1]);
+        return NGX_CONF_ERROR;
+    }
+
+    merged = ngx_http_auth_cedar_new_policy_set(cf);
+    if (merged == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    for (i = 2; i < cf->args->nelts; i++) {
+        pset = ngx_http_auth_cedar_parse_file(cf, &value[i]);
+        if (pset == NULL) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_auth_cedar_append_policies(cf, merged, pset)
+            != NGX_OK)
+        {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+    named = ngx_array_push(mcf->named_policy_sets);
+    if (named == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    named->id = value[1];
+    named->policy_set = merged;
+
+    return NGX_CONF_OK;
 }
 
 
