@@ -1,4 +1,4 @@
-# nginx-auth-cedar
+# NGINX auth_cedar Module
 
 [![test](https://github.com/kjdev/nginx-auth-cedar/actions/workflows/test.yaml/badge.svg)](https://github.com/kjdev/nginx-auth-cedar/actions/workflows/test.yaml)
 
@@ -243,16 +243,52 @@ Full directive reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
   allow-lists, JWT / OAuth2 / `auth_request` integration
 - [Changelog](CHANGELOG.md)
 
-## Scope
+## Scope and non-goals
 
-`nginx-auth-cedar` is an **authorization** (AuthZ) module. It does **not**
-authenticate the request. Combine it with:
+`nginx-auth-cedar` is an **authorization** (AuthZ) module focused on
+**edge enforcement inside the nginx worker**. The goal is to evaluate a
+Cedar subset with low latency and zero runtime dependencies — not to be
+a drop-in replacement for the general-purpose Cedar SDK or for
+AWS Verified Permissions (AVP).
 
-- [`ngx_http_auth_jwt_module`](https://nginx.org/en/docs/http/ngx_http_auth_jwt_module.html)
-  for JWT signature verification (or any alternative such as
-  [`nginx-auth-jwt`](https://github.com/kjdev/nginx-auth-jwt))
-- `auth_request` for Token Introspection / external authentication
-- `realip` for trusting `X-Forwarded-For` from upstream proxies
+### Intended use
+
+- The module does **not** authenticate the request. Combine it with:
+  - [`ngx_http_auth_jwt_module`](https://nginx.org/en/docs/http/ngx_http_auth_jwt_module.html)
+    for JWT signature verification (or an alternative such as
+    [`nginx-auth-jwt`](https://github.com/kjdev/nginx-auth-jwt))
+  - `auth_request` for Token Introspection / external authentication
+  - `realip` for trusting `X-Forwarded-For` from upstream proxies
+- Policies are loaded statically from nginx configuration files.
+  Dynamic updates happen through an nginx reload (`SIGHUP`).
+
+### Non-goals
+
+- **Not a replacement for the official Cedar implementation (Rust).**
+  Upstream Cedar ships with a Lean-based formal specification
+  (Verification-Guided Development); the `nxe-cedar` evaluator bundled
+  here is an independent C implementation with no formal correspondence
+  to that Lean model. Memory safety is not language-guaranteed and
+  relies on careful C with AddressSanitizer in CI. Behavioural
+  compatibility is exercised through a Rust FFI oracle that runs the
+  same inputs through the official `cedar-policy` crate, but this
+  module is not suitable for environments that require formal
+  verification as an adoption gate (e.g. high-assurance financial or
+  healthcare compliance).
+- **Not compatible with AWS Verified Permissions.**
+  The AVP `cedarJson` entity format, schemas, Policy Store APIs, policy
+  templates, and identity-source integrations (e.g. Cognito) are not
+  supported. If you want to keep AVP as the source of truth and use
+  this module purely as an edge enforcement point, you will need an
+  out-of-band sync that generates nginx configuration / entity files
+  from the AVP APIs.
+- **Does not track every Cedar feature.**
+  Supported syntax is described in the *Features* section above and in
+  the
+  [`nxe-cedar` feature matrix](https://github.com/kjdev/nxe-cedar/blob/main/docs/FEATURES.md).
+  Cedar 4-only constructs such as `datetime` / `duration` values and
+  entity tags are tracked there — check the matrix for their current
+  implementation status.
 
 The policy evaluator (`nxe-cedar`) is shipped as a git submodule and may
 be reused independently by other nginx modules. See
