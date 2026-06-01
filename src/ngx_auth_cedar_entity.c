@@ -17,8 +17,8 @@ static ngx_str_t ngx_auth_cedar_ip_attr_name =
 
 
 typedef ngx_int_t (*ngx_auth_cedar_add_attr_fn)(
-    nxe_cedar_eval_ctx_t *ctx, ngx_str_t *name,
-    ngx_str_t *value);
+    nxe_cedar_eval_ctx_t *ctx, const ngx_str_t *name,
+    const ngx_str_t *value);
 
 
 static ngx_flag_t
