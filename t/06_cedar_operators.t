@@ -222,3 +222,33 @@ OK
 --- request
 GET /test.html
 --- error_code: 200
+
+
+=== TEST 14: `==` is total - type mismatch yields false, not an error
+--- http_config
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/op_eq_mismatch_total.cedar;
+--- config
+    location /test.html {
+        auth_cedar on;
+    }
+--- user_files
+>>> test.html
+OK
+--- request
+GET /test.html
+--- error_code: 200
+
+
+=== TEST 15: `!=` is total - type mismatch yields true, not an error
+--- http_config
+    auth_cedar_policy_file def $TEST_NGINX_CONF_DIR/policies/op_neq_mismatch_total.cedar;
+--- config
+    location /test.html {
+        auth_cedar on;
+    }
+--- user_files
+>>> test.html
+OK
+--- request
+GET /test.html
+--- error_code: 200
