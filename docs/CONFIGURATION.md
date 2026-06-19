@@ -148,7 +148,7 @@ matching `principal == User::"..."` will not fire, but an unconditional
 `permit (principal, ...);` rule will still allow the request because
 Cedar treats `User::""` as a valid principal. If a multi-source
 fallback is required, encode it in the complex value itself (e.g.
-`map_hash` / `set` directives to choose the first non-empty source).
+`map` / `set` directives to choose the first non-empty source).
 Empty resolutions are logged at `debug_http` to aid diagnosis.
 
 The principal entity type is always `User`.
