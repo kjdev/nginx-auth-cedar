@@ -6,6 +6,8 @@
  */
 
 
+#include "nxe_phase.h"
+
 #include "ngx_http_auth_cedar_module.h"
 #include "ngx_auth_cedar_entity.h"
 #include "ngx_auth_cedar_variable.h"
@@ -178,7 +180,9 @@ ngx_http_auth_cedar_handler(ngx_http_request_t *r)
        attribute mappings. */
     if (ctx != NULL && ctx->evaluated && ctx->last_lcf == lcf) {
         if (ctx->decision == NXE_CEDAR_DECISION_ALLOW) {
-            return NGX_OK;
+            /* PRECONTENT uses generic phase checker: NGX_DECLINED =
+               next handler */
+            return NGX_DECLINED;
         }
 
         return lcf->deny_status;
@@ -214,7 +218,9 @@ ngx_http_auth_cedar_handler(ngx_http_request_t *r)
     ctx->last_lcf = lcf;
 
     if (decision == NXE_CEDAR_DECISION_ALLOW) {
-        return NGX_OK;
+        /* PRECONTENT uses generic phase checker: NGX_DECLINED =
+           next handler */
+        return NGX_DECLINED;
     }
 
     ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
@@ -238,18 +244,13 @@ ngx_http_auth_cedar_preconfiguration(ngx_conf_t *cf)
 static ngx_int_t
 ngx_http_auth_cedar_postconfiguration(ngx_conf_t *cf)
 {
-    ngx_http_handler_pt *h;
-    ngx_http_core_main_conf_t *cmcf;
-
-    cmcf = ngx_http_conf_get_module_main_conf(cf,
-                                              ngx_http_core_module);
-
-    h = ngx_array_push(&cmcf->phases[NGX_HTTP_PRECONTENT_PHASE].handlers);
-    if (h == NULL) {
+    if (nxe_phase_add_handler(cf, NGX_HTTP_PRECONTENT_PHASE,
+                              NXE_PHASE_PRIO_CEDAR,
+                              ngx_http_auth_cedar_handler,
+                              "auth_cedar") != NGX_OK)
+    {
         return NGX_ERROR;
     }
-
-    *h = ngx_http_auth_cedar_handler;
 
     return NGX_OK;
 }

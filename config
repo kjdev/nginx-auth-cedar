@@ -10,25 +10,39 @@ fi
 
 . "$nxe_cedar_dir/config.ngx"
 
+# --- submodule: nxe-phase ---
+nxe_phase_dir="$ngx_addon_dir/nxe-phase"
+nxe_phase_tag="auth_cedar"
+
+if [ ! -f "$nxe_phase_dir/config.ngx" ]; then
+    echo "$0: error: $nxe_phase_dir/config.ngx not found" >&2
+    exit 1
+fi
+
+. "$nxe_phase_dir/config.ngx"
+
 # --- module definition ---
 ngx_module_type=HTTP
-ngx_module_name="ngx_http_auth_cedar_module"
+ngx_module_name="ngx_http_auth_cedar_module $nxe_phase_module_name"
 ngx_module_deps="\
   $nxe_cedar_module_deps \
+  $nxe_phase_module_deps \
   $ngx_addon_dir/src/ngx_http_auth_cedar_module.h \
   $ngx_addon_dir/src/ngx_auth_cedar_entity.h \
   $ngx_addon_dir/src/ngx_auth_cedar_variable.h \
 "
 ngx_module_incs="\
   $nxe_cedar_module_incs \
+  $nxe_phase_module_incs \
   $ngx_addon_dir/src \
 "
 ngx_module_srcs="\
   $nxe_cedar_module_srcs \
+  $nxe_phase_module_srcs \
   $ngx_addon_dir/src/ngx_http_auth_cedar_module.c \
   $ngx_addon_dir/src/ngx_auth_cedar_entity.c \
   $ngx_addon_dir/src/ngx_auth_cedar_variable.c \
 "
-ngx_module_libs="$nxe_cedar_module_libs"
+ngx_module_libs="$nxe_cedar_module_libs $nxe_phase_module_libs"
 
 . auto/module
