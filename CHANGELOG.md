@@ -3,6 +3,19 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **BREAKING**: The PRECONTENT-phase handler now reports its allow decision with `NGX_DECLINED` instead of `NGX_OK`
+  - Under nginx's generic phase checker, `NGX_OK` tells the phase engine "this phase is fully done", which silently skipped every other PRECONTENT-phase handler registered in the same location (`try_files`, `mirror`, other authorization modules) whenever this module allowed a request; `NGX_DECLINED` lets those handlers run as configured, matching how any other well-behaved phase handler is expected to behave
+  - The deny path is unaffected: a denied request still returns the configured `auth_cedar_deny_status` immediately
+- The module now registers its PRECONTENT-phase handler at a fixed priority via the new `nxe-phase` submodule instead of relying on module load order, so its position relative to other handlers registered through `nxe-phase` in the same phase no longer depends on `load_module` ordering in `nginx.conf`; handlers at the same priority still run in registration order, and handlers registered directly with nginx (not via `nxe-phase`) are outside this ordering guarantee
+
+### Dependencies
+
+- Add the `nxe-phase` submodule to 0.1.0 (shared phase-handler-ordering helper)
+
 ## [0.3.0] - 2026-06-01
 
 ### Added
