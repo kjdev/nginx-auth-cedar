@@ -5,6 +5,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-02
+
 ### Changed
 
 - **BREAKING**: The PRECONTENT-phase handler now reports its allow decision with `NGX_DECLINED` instead of `NGX_OK`
